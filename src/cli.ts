@@ -1,140 +1,231 @@
 #!/usr/bin/env node
 
-import * as fs from 'fs';
-import * as path from 'path';
-import { parseArgs } from 'util';
-import { convertFigmaToCode } from './converter.js';
-import { fetchFigmaFile } from './figma-client.js';
-import * as colors from 'picocolors';
+import yargs, { Argv } from 'yargs';
+import { hideBin } from 'yargs/helpers';
+import chalk from 'chalk';
+import fs from 'fs-extra';
+import path from 'path';
+import DesignToCode, { FigmaNode } from './index';
 
-const args = parseArgs({
-  options: {
-    figma: { type: 'string', short: 'f', description: 'Figma file URL' },
-    token: { type: 'string', short: 't', description: 'Figma API token (or use FIGMA_TOKEN env)' },
-    framework: { type: 'string', short: 'r', description: 'Target framework: react|vue|svelte' },
-    output: { type: 'string', short: 'o', description: 'Output directory (default: ./components)' },
-    help: { type: 'boolean', short: 'h', description: 'Show help' },
-    version: { type: 'boolean', short: 'v', description: 'Show version' },
-  },
-  allowPositionals: true,
-});
-
-if (args.values.help) {
-  console.log(`
-${colors.cyan('design-to-code')} ${colors.gray('1.0.0')}
-
-${colors.bold('Convert Figma designs to clean code.')}
-
-${colors.bold('Usage:')}
-  d2c --figma <url> --framework react [options]
-  d2c --figma <url> --framework vue
-  d2c --figma <url> --framework svelte
-
-${colors.bold('Options:')}
-  -f, --figma <url>        Figma file URL (or file ID)
-  -r, --framework <name>   Target framework: react, vue, or svelte (default: react)
-  -t, --token <token>      Figma API token (default: FIGMA_TOKEN env var)
-  -o, --output <dir>       Output directory (default: ./components)
-  -h, --help               Show this help message
-  -v, --version            Show version
-
-${colors.bold('Examples:')}
-  d2c --figma https://figma.com/file/abc123/MyDesign --framework react
-  d2c -f abc123 -r vue -o ./src/components
-  FIGMA_TOKEN=abc123 d2c --figma abc123 --framework svelte
-
-${colors.bold('Environment:')}
-  FIGMA_TOKEN              Your Figma API personal access token
-  CLAUDE_API_KEY           Anthropic Claude API key (for code generation)
-`);
-  process.exit(0);
+interface ConvertOptions {
+  'figma-json': string;
+  framework: 'react' | 'vue' | 'svelte';
+  output: string;
+  typescript: boolean;
+  tailwind: boolean;
+  verbose: boolean;
+  _: string[];
 }
 
-if (args.values.version) {
-  console.log('design-to-code 1.0.0');
-  process.exit(0);
+interface BatchOptions {
+  directory: string;
+  framework: 'react' | 'vue' | 'svelte';
+  output: string;
+  verbose: boolean;
+  _: string[];
 }
 
 async function main() {
   try {
-    const figmaUrl = args.values.figma as string;
-    const framework = (args.values.framework as string) || 'react';
-    const token = (args.values.token as string) || process.env.FIGMA_TOKEN;
-    const outputDir = (args.values.output as string) || './components';
+    const argv = yargs(hideBin(process.argv))
+      .command(
+        'convert <figma-json>',
+        'Convert Figma JSON export to components',
+        (yargs: Argv) =>
+          yargs
+            .positional('figma-json', {
+              describe: 'Path to exported Figma JSON file',
+              type: 'string'
+            } as any)
+            .option('framework', {
+              alias: 'f',
+              describe: 'Target framework',
+              choices: ['react', 'vue', 'svelte'],
+              default: 'react'
+            })
+            .option('output', {
+              alias: 'o',
+              describe: 'Output directory',
+              default: './components'
+            })
+            .option('typescript', {
+              alias: 't',
+              describe: 'Generate TypeScript',
+              type: 'boolean',
+              default: true
+            })
+            .option('tailwind', {
+              alias: 'tw',
+              describe: 'Use Tailwind CSS',
+              type: 'boolean',
+              default: false
+            })
+      )
+      .command(
+        'batch <directory>',
+        'Convert multiple Figma JSON files in a directory',
+        (yargs: Argv) =>
+          yargs
+            .positional('directory', {
+              describe: 'Directory containing Figma JSON files',
+              type: 'string'
+            } as any)
+            .option('framework', {
+              alias: 'f',
+              describe: 'Target framework',
+              choices: ['react', 'vue', 'svelte'],
+              default: 'react'
+            })
+            .option('output', {
+              alias: 'o',
+              describe: 'Output directory',
+              default: './components'
+            })
+      )
+      .option('verbose', {
+        alias: 'v',
+        describe: 'Verbose output',
+        type: 'boolean',
+        default: false
+      })
+      .help()
+      .alias('help', 'h');
 
-    if (!figmaUrl) {
-      console.error(colors.red('❌ Error: --figma is required'));
-      console.error('Run with --help for usage');
-      process.exit(1);
+    const parsed = await argv;
+
+    if ((parsed as any)._[0] === 'convert') {
+      await handleConvert(
+        (parsed as any)['figma-json'] as string,
+        parsed as any
+      );
+    } else if ((parsed as any)._[0] === 'batch') {
+      await handleBatch(
+        (parsed as any)['directory'] as string,
+        parsed as any
+      );
+    } else {
+      console.log(chalk.yellow('No command specified. Use --help for usage.'));
     }
-
-    if (!token) {
-      console.error(colors.red('❌ Error: FIGMA_TOKEN not set and --token not provided'));
-      console.error('Get your token from https://www.figma.com/developers/api#access-tokens');
-      process.exit(1);
-    }
-
-    if (!['react', 'vue', 'svelte'].includes(framework)) {
-      console.error(colors.red(`❌ Error: framework must be react, vue, or svelte`));
-      process.exit(1);
-    }
-
-    console.log(colors.cyan('🎨 Design to Code Converter'));
-    console.log(colors.gray(`Framework: ${framework} | Output: ${outputDir}`));
-    console.log();
-
-    // Ensure output directory exists
-    if (!fs.existsSync(outputDir)) {
-      fs.mkdirSync(outputDir, { recursive: true });
-    }
-
-    // Step 1: Fetch Figma file
-    console.log(colors.yellow('📥 Fetching Figma file...'));
-    const figmaData = await fetchFigmaFile(figmaUrl, token);
-
-    if (!figmaData) {
-      console.error(colors.red('❌ Failed to fetch Figma file'));
-      process.exit(1);
-    }
-
-    console.log(colors.green(`✓ Loaded: ${figmaData.name}`));
-    console.log(colors.gray(`  Components: ${figmaData.componentCount} | Frames: ${figmaData.frameCount}`));
-
-    // Step 2: Convert to code
-    console.log(colors.yellow('⚙️  Converting to code...'));
-    const result = await convertFigmaToCode(figmaData, framework);
-
-    if (!result) {
-      console.error(colors.red('❌ Conversion failed'));
-      process.exit(1);
-    }
-
-    // Step 3: Write output files
-    console.log(colors.yellow('💾 Writing components...'));
-    let fileCount = 0;
-
-    for (const [filename, content] of Object.entries(result.components)) {
-      const filepath = path.join(outputDir, filename);
-      fs.writeFileSync(filepath, content);
-      fileCount++;
-      console.log(colors.gray(`  ✓ ${filename}`));
-    }
-
-    // Write index file
-    const indexContent = result.index;
-    const indexPath = path.join(outputDir, 'index.ts');
-    fs.writeFileSync(indexPath, indexContent);
-    console.log(colors.gray(`  ✓ index.ts`));
-
-    console.log();
-    console.log(colors.green('✅ Success!'));
-    console.log(colors.gray(`Generated ${fileCount} components in ${outputDir}/`));
-    console.log(colors.gray(`Next: Import from ${outputDir}/index.ts`));
-
   } catch (error) {
-    console.error(colors.red('❌ Error:'), error instanceof Error ? error.message : String(error));
+    console.error(chalk.red('Error:'), error instanceof Error ? error.message : error);
     process.exit(1);
   }
 }
 
-main();
+async function handleConvert(figmaJsonPath: string, options: any) {
+  if (!fs.existsSync(figmaJsonPath)) {
+    throw new Error(`File not found: ${figmaJsonPath}`);
+  }
+
+  const figmaData = fs.readJsonSync(figmaJsonPath);
+  const converter = new DesignToCode({
+    framework: options.framework,
+    outputDir: options.output,
+    typescript: options.typescript,
+    tailwind: options.tailwind
+  });
+
+  await fs.ensureDir(options.output);
+
+  let componentCount = 0;
+  const processNode = async (node: FigmaNode) => {
+    if (node.type === 'COMPONENT' || node.type === 'FRAME') {
+      const { code, filename } = converter.generateComponent(node);
+      const filepath = path.join(options.output, filename);
+      
+      await fs.writeFile(filepath, code);
+      componentCount++;
+      
+      if (options.verbose) {
+        console.log(chalk.green('✓'), `Generated ${filename}`);
+      }
+    }
+
+    if (node.children) {
+      for (const child of node.children) {
+        await processNode(child);
+      }
+    }
+  };
+
+  if (figmaData.document?.children) {
+    for (const child of figmaData.document.children) {
+      await processNode(child);
+    }
+  }
+
+  console.log(chalk.green.bold(`\n✓ Generated ${componentCount} components`));
+  console.log(chalk.cyan(`  Output: ${path.resolve(options.output)}`));
+  console.log(chalk.cyan(`  Framework: ${options.framework}`));
+  console.log(chalk.cyan(`  TypeScript: ${options.typescript ? 'yes' : 'no'}`));
+}
+
+async function handleBatch(directory: string, options: any): Promise<void> {
+  if (!fs.existsSync(directory)) {
+    throw new Error(`Directory not found: ${directory}`);
+  }
+
+  const files = fs.readdirSync(directory).filter((f: string) => f.endsWith('.json'));
+  
+  if (files.length === 0) {
+    console.log(chalk.yellow('No JSON files found in directory'));
+    return;
+  }
+
+  let totalComponents = 0;
+
+  for (const file of files) {
+    const filepath = path.join(directory, file);
+    
+    if (options.verbose) {
+      console.log(chalk.blue(`Processing ${file}...`));
+    }
+
+    try {
+      const figmaData = fs.readJsonSync(filepath);
+      const converter = new DesignToCode({
+        framework: options.framework,
+        outputDir: options.output
+      });
+
+      await fs.ensureDir(options.output);
+
+      const processNode = async (node: FigmaNode): Promise<void> => {
+        if (node.type === 'COMPONENT' || node.type === 'FRAME') {
+          const { code, filename } = converter.generateComponent(node);
+          const outpath = path.join(options.output, filename);
+          
+          await fs.writeFile(outpath, code);
+          totalComponents++;
+          
+          if (options.verbose) {
+            console.log(chalk.green('  ✓'), filename);
+          }
+        }
+
+        if (node.children) {
+          for (const child of node.children) {
+            await processNode(child);
+          }
+        }
+      };
+
+      if (figmaData.document?.children) {
+        for (const child of figmaData.document.children) {
+          await processNode(child);
+        }
+      }
+    } catch (error) {
+      console.error(chalk.red(`Error processing ${file}:`), error instanceof Error ? error.message : error);
+    }
+  }
+
+  console.log(chalk.green.bold(`\n✓ Batch complete`));
+  console.log(chalk.cyan(`  Total components: ${totalComponents}`));
+  console.log(chalk.cyan(`  Output: ${path.resolve(options.output)}`));
+}
+
+main().catch((error) => {
+  console.error(chalk.red('Fatal error:'), error);
+  process.exit(1);
+});

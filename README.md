@@ -1,146 +1,112 @@
-# Design to Code 🎨→💻
+# design-to-code
 
-Convert Figma designs to clean, production-ready React, Vue, or Svelte components. **Not screenshots. Real code.**
+Convert Figma designs to clean React/Vue/Svelte components. **Real code, not screenshots.**
 
 ## Features
 
 ✨ **Multi-Framework Support**
-- React (JSX)
-- Vue 3 (SFC)
-- Svelte (Reactive)
+- React (JSX/TSX)
+- Vue (Single File Components)
+- Svelte (Component Format)
 
-🎯 **Smart Component Generation**
-- Figma components → type-safe React/Vue/Svelte components
-- Automatic prop extraction from design patterns
-- Responsive sizing from Figma layouts
-- Text layers become real text (not images)
+🎨 **Smart Component Generation**
+- Extract design properties (colors, dimensions, typography)
+- Generate production-ready components
+- Optional Tailwind CSS support
+- Full TypeScript support
 
-⚡ **Production-Ready Output**
-- Clean, readable code
-- TypeScript support
-- Component index for easy imports
-- No bundle bloat
+🔄 **Batch Processing**
+- Convert multiple Figma JSON exports at once
+- Automatic component naming and organization
+- Flexible output directory structure
 
-🔗 **Figma API Integration**
-- Direct API access (no screenshot conversion)
-- Supports components, frames, and groups
-- Respects visibility and naming
+📊 **Intelligent Prop Extraction**
+- Dimensions and positioning
+- Colors and background styles
+- Typography properties (font size, weight)
+- Component hierarchy preservation
 
 ## Installation
 
 ```bash
 npm install -g design-to-code
 # or
-npm install design-to-code
+npx design-to-code --help
 ```
 
 ## Quick Start
 
-### 1. Get a Figma API Token
+### 1. Export from Figma
 
-1. Go to [Figma Settings](https://www.figma.com/settings/credentials)
-2. Create a **Personal access token**
-3. Copy it to your environment: `export FIGMA_TOKEN=your_token_here`
+In Figma:
+1. Right-click your design file
+2. Select "Copy link"
+3. Visit the link and export as JSON (Menu → Export → JSON)
+4. Save as `design.json`
 
-### 2. Convert a Design
+### 2. Generate Components
 
 ```bash
-d2c --figma https://figma.com/file/abc123/MyDesign --framework react
+design-to-code convert design.json --framework react --output ./components
 ```
 
-**Output:** `components/` directory with React components
-
-### 3. Import and Use
+### 3. Use Generated Components
 
 ```tsx
-import { Button, Card, Header } from './components';
+import Button from './components/Button';
 
-export default function App() {
-  return (
-    <div>
-      <Header />
-      <Card>
-        <Button>Click me</Button>
-      </Card>
-    </div>
-  );
+export function App() {
+  return <Button>Click me</Button>;
 }
 ```
 
 ## Usage
 
-### CLI Options
+### Convert Single File
 
 ```bash
-d2c --help
+design-to-code convert <figma-json> [options]
 
-# Required
---figma <url|id>     Figma file URL or file ID
-
-# Optional
--r, --framework      Target: react (default), vue, svelte
--t, --token          Figma API token (default: FIGMA_TOKEN env)
--o, --output         Output directory (default: ./components)
-
-# Examples
-d2c --figma https://figma.com/file/abc123/Design --framework react
-d2c -f abc123 -r vue -o ./src/components
-FIGMA_TOKEN=token d2c --figma abc123 --framework svelte
+Options:
+  -f, --framework   react|vue|svelte (default: react)
+  -o, --output      Output directory (default: ./components)
+  -t, --typescript  Generate TypeScript (default: true)
+  --tailwind        Use Tailwind CSS (default: false)
+  -v, --verbose     Verbose output
 ```
 
-### Programmatic API
-
-```typescript
-import { fetchFigmaFile, convertFigmaToCode } from 'design-to-code';
-
-const figmaData = await fetchFigmaFile('abc123', 'figma_token');
-const result = await convertFigmaToCode(figmaData, 'react');
-
-// result.components: { 'Button.tsx': '...', 'Card.tsx': '...' }
-// result.index: 'export { Button } from ...'
+Example:
+```bash
+design-to-code convert design.json -f vue -o ./src/components --tailwind
 ```
 
-## How It Works
+### Batch Process
 
-### 1. **Figma API Fetch**
-   - Pulls file structure directly from Figma API
-   - Extracts components, frames, and layout information
-   - No need to export images or screenshots
+Convert all JSON files in a directory:
 
-### 2. **Smart Component Detection**
-   - Identifies Figma components and frames
-   - Extracts sizing, colors, typography
-   - Recognizes text layers as real content
+```bash
+design-to-code batch ./figma-exports -f react -o ./components
+```
 
-### 3. **Code Generation**
-   - Converts design elements to HTML/CSS
-   - Adds TypeScript types for props
-   - Creates framework-specific syntax (React/Vue/Svelte)
-
-### 4. **Output**
-   - One file per Figma component
-   - Auto-generated index file
-   - Ready to use in your project
-
-## Examples
+## Output Examples
 
 ### React Component
-
-**Input:** Figma component named "Button"
-
-**Output:** `Button.tsx`
 ```tsx
 import React from 'react';
 
-interface ButtonProps {
-  label?: string;
-  variant?: string;
+interface Props {
+  children?: React.ReactNode;
+  className?: string;
 }
 
-export const Button: React.FC<ButtonProps> = ({ label, variant }) => {
+const Button: React.FC<Props> = ({ children, className = '' }) => {
   return (
-    <div style={{ width: 120px; height: 48px; }}>
-      {label || 'Button'}
+    <div
+      className="w-[100px] h-[40px] bg-[#6366F1] {className}"
+      role="presentation"
+      data-testid="button"
+    >
+      {children}
     </div>
   );
 };
@@ -149,161 +115,165 @@ export default Button;
 ```
 
 ### Vue Component
-
-**Input:** Same Figma component
-
-**Output:** `Button.tsx`
 ```vue
 <template>
-  <div style="width: 120px; height: 48px;">
-    {{ label || 'Button' }}
+  <div
+    :class="['w-[100px] h-[40px] bg-[#6366F1]', className]"
+    role="presentation"
+    :data-testid="testId"
+  >
+    <slot></slot>
   </div>
 </template>
 
-<script>
+<script lang="ts">
 export default {
   name: 'Button',
   props: {
-    label: String,
-    variant: String,
-  },
-};
-</script>
-
-<style scoped>
-div {
-  box-sizing: border-box;
+    className: {
+      type: String,
+      default: ''
+    }
+  }
 }
-</style>
+</script>
 ```
 
 ### Svelte Component
-
-**Input:** Same Figma component
-
-**Output:** `Button.tsx`
 ```svelte
-<script>
-  export let label;
-  export let variant;
+<script lang="ts">
+  let className = '';
+  export { className as class };
+  
+  const testId = 'button';
 </script>
 
-<div style="width: 120px; height: 48px;">
-  {label || 'Button'}
+<div
+  class="w-[100px] h-[40px] bg-[#6366F1] {className}"
+  role="presentation"
+  data-testid="{testId}"
+>
+  <slot></slot>
 </div>
-
-<style>
-  div {
-    box-sizing: border-box;
-  }
-</style>
 ```
+
+## Configuration
+
+### TypeScript
+
+Generate TypeScript components by default:
+```bash
+design-to-code convert design.json --typescript
+```
+
+Disable TypeScript:
+```bash
+design-to-code convert design.json --typescript=false
+```
+
+### Styling
+
+#### CSS Modules (Default)
+Components use generated CSS modules with scoped styling.
+
+#### Tailwind CSS
+Generate components using Tailwind utility classes:
+```bash
+design-to-code convert design.json --tailwind
+```
+
+#### Custom CSS
+Edit generated `.module.css` files after generation.
 
 ## Workflow
 
-1. **Design in Figma** — Create components and frames
-2. **Convert** — Run `d2c --figma <url> --framework react`
-3. **Customize** — Enhance with interactivity and styling
-4. **Ship** — Use components in your app
+1. **Design in Figma**
+   - Organize components in frames
+   - Use consistent naming (PascalCase recommended)
+   - Label variants clearly
 
-## Pro Tips
+2. **Export from Figma**
+   - Menu → File → Export as JSON
+   - Save `design.json`
 
-### 🎯 Naming Conventions
-Use clear names in Figma:
-- ✅ `Button`, `Card`, `HeaderNav`
-- ❌ `Frame 1`, `Group 2`, `Component copy`
+3. **Generate Code**
+   ```bash
+   design-to-code convert design.json -f react
+   ```
 
-### 🔗 Template Variables
-Use `${variableName}` in text layers to extract props:
+4. **Customize**
+   - Review generated components
+   - Add business logic
+   - Customize styling as needed
+   - Update prop interfaces
 
-**Figma text:** `"Hello, ${userName}"`
+5. **Deploy**
+   - Commit components to your repo
+   - Use in your application
+   - Update components by re-running conversion
 
-**Generated prop:** `userName?: string`
+## Advanced Usage
 
-### 📦 Component Organization
-- One Figma file per design system
-- Use frames for page-level layouts
-- Use components for reusable UI elements
+### Programmatic API
 
-### 🎨 Colors & Styling
-- Extract Figma fills → CSS background colors
-- Extract strokes → CSS borders
-- Font sizes and families → CSS properties
+```typescript
+import DesignToCode from 'design-to-code';
 
-## Limitations & Future
+const converter = new DesignToCode({
+  framework: 'react',
+  outputDir: './components',
+  typescript: true,
+  tailwind: true,
+  includeStyles: true
+});
 
-### Current
-- ✅ Text, rectangles, groups, components
-- ✅ Sizing and positioning
-- ✅ Basic color extraction
+const node = {
+  id: '123',
+  name: 'Button',
+  type: 'COMPONENT',
+  children: []
+};
 
-### Coming Soon
-- 🚧 Advanced styling (shadows, gradients, effects)
-- 🚧 Image layers (optimized export)
-- 🚧 Figma interactions → React state
-- 🚧 Tailwind CSS generation
-- 🚧 Storybook integration
-
-## API Key Storage
-
-### Recommended (Secure)
-```bash
-# Add to ~/.bashrc or ~/.zshrc
-export FIGMA_TOKEN='figd_...'
+const { code, filename } = converter.generateComponent(node);
+console.log(code);  // React component code
 ```
 
-### Alternative (CLI)
-```bash
-d2c --figma abc123 --token figd_...
+### Process Multiple Designs
+
+```typescript
+const nodes = [/* Figma nodes */];
+const components = converter.processDesign(nodes);
+
+for (const component of components) {
+  fs.writeFileSync(component.filename, component.code);
+}
 ```
 
-### Never
-```bash
-# Don't commit to git!
-# Don't hardcode in source
-```
+## Limitations
 
-## Troubleshooting
+- Figma frames and components are converted to basic div structures
+- Complex animations and interactions require manual implementation
+- Image assets should be handled separately (not embedded in exports)
+- Some advanced Figma features (constraints, masks) may need post-processing
 
-### "Invalid Figma token"
-- Check token at https://figma.com/settings/credentials
-- Ensure it has API access enabled
-- Recreate if necessary
+## Roadmap
 
-### "File not found"
-- Verify file ID/URL is correct
-- Check that file is shared/accessible
-- Ensure token has read access
-
-### Missing components
-- Check that Figma file has named components
-- Verify components aren't hidden
-- Ensure proper naming (no special chars)
+- [ ] Figma API integration (direct export)
+- [ ] CSS Grid/Flexbox layout generation
+- [ ] Storybook integration
+- [ ] Component story generation
+- [ ] Design system token extraction
+- [ ] Responsive breakpoints support
+- [ ] Animation support
 
 ## Contributing
 
-Found a bug? Want a feature?
-
-```bash
-git clone https://github.com/Arephan/design-to-code
-cd design-to-code
-npm install
-npm run dev -- --help
-```
+Issues, feature requests, and PRs welcome!
 
 ## License
 
-MIT — Use freely in personal and commercial projects.
-
-## See Also
-
-- **Figma API**: https://www.figma.com/developers/api
-- **React**: https://react.dev
-- **Vue**: https://vuejs.org
-- **Svelte**: https://svelte.dev
+MIT
 
 ---
 
-**Made with ❤️ by Arephan**
-
-Save hours converting designs. Generate clean code. Ship faster.
+**⚡ Turn Figma designs into production React/Vue/Svelte code instantly.**
